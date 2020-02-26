@@ -571,21 +571,6 @@ static void log_reuse(struct liftoff_output *output)
 	output->alloc_reuse++;
 }
 
-static void log_no_reuse(struct liftoff_output *output)
-{
-	if (!log_has(LIFTOFF_DEBUG)) {
-		return;
-	}
-
-	liftoff_log(LIFTOFF_DEBUG, "\nApply on output %p.", (void *) output);
-
-	if (output->alloc_reuse != 0) {
-		liftoff_log(LIFTOFF_DEBUG, "Stopped reusing previous plane allocation on output %p. "
-					"Had reused it %d times.", (void *) output, output->alloc_reuse);
-		output->alloc_reuse = 0;
-	}
-}
-
 bool liftoff_output_apply(struct liftoff_output *output, drmModeAtomicReq *req)
 {
 	struct liftoff_device *device;
@@ -604,7 +589,6 @@ bool liftoff_output_apply(struct liftoff_output *output, drmModeAtomicReq *req)
 		log_reuse(output);
 		return true;
 	}
-	log_no_reuse(output);
 
 	output_log_layers(output);
 
