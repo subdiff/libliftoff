@@ -97,5 +97,6 @@ bool plane_apply(struct liftoff_plane *plane, struct liftoff_layer *layer,
 		 drmModeAtomicReq *req, bool *compatible);
 
 void output_log_layers(struct liftoff_output *output);
+bool log_has(enum liftoff_log_importance verbosity);
 
 #endif
