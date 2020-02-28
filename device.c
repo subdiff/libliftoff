@@ -106,6 +106,7 @@ bool device_test_commit(struct liftoff_device *device,
 	if (ret == 0) {
 		*compatible = true;
 	} else if (-ret == EINVAL || -ret == ERANGE) {
+		liftoff_log(LIFTOFF_DEBUG, "Atomic test commit failed: %d", ret);
 		*compatible = false;
 	} else {
 		liftoff_log_errno(LIFTOFF_ERROR, "drmModeAtomicCommit");

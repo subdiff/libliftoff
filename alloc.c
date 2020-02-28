@@ -272,7 +272,7 @@ bool check_layer_plane_compatible(struct alloc_step *step,
 			/* This layer needs to be on top of the last
 			 * allocated one */
 			liftoff_log(LIFTOFF_DEBUG,
-				    "Layer %p -> plane %"PRIu32": "
+					"  Layer %p -> plane %"PRIu32": "
 				    "layer zpos invalid",
 				    (void *)layer, plane->id);
 			return false;
@@ -295,7 +295,7 @@ bool check_layer_plane_compatible(struct alloc_step *step,
 	if (plane->type != DRM_PLANE_TYPE_PRIMARY &&
 	    has_composited_layer_over(output, step, layer)) {
 		liftoff_log(LIFTOFF_DEBUG,
-			    "Layer %p -> plane %"PRIu32": "
+				"  Layer %p -> plane %"PRIu32": "
 			    "has composited layer on top",
 			    (void *)layer, plane->id);
 		return false;
@@ -304,7 +304,7 @@ bool check_layer_plane_compatible(struct alloc_step *step,
 	if (plane->type != DRM_PLANE_TYPE_PRIMARY &&
 	    layer == layer->output->composition_layer) {
 		liftoff_log(LIFTOFF_DEBUG,
-			    "Layer %p -> plane %"PRIu32": "
+				"  Layer %p -> plane %"PRIu32": "
 			    "cannot put composition layer on "
 			    "non-primary plane",
 			    (void *)layer, plane->id);
@@ -316,6 +316,11 @@ bool check_layer_plane_compatible(struct alloc_step *step,
 
 bool check_alloc_valid(struct alloc_result *result, struct alloc_step *step)
 {
+	liftoff_log(LIFTOFF_DEBUG,
+			"    CHECK ALLOC: has-comp: %d composited: %d | score: %d target: %zu",
+			result->has_composition_layer, step->composited,
+				step->score, result->non_composition_layers_len);
+
 	/* If composition isn't used, we need to have allocated all
 	 * layers. */
 	/* TODO: find a way to fail earlier, e.g. when the number of
@@ -323,7 +328,7 @@ bool check_alloc_valid(struct alloc_result *result, struct alloc_step *step)
 	if (result->has_composition_layer && !step->composited &&
 	    step->score != (int)result->non_composition_layers_len) {
 		liftoff_log(LIFTOFF_DEBUG,
-			    "Cannot skip composition: some layers "
+				"  Cannot skip composition: some layers "
 			    "are missing a plane");
 		return false;
 	}
@@ -333,7 +338,7 @@ bool check_alloc_valid(struct alloc_result *result, struct alloc_step *step)
 	if (step->composited &&
 	    step->score == (int)result->non_composition_layers_len) {
 		liftoff_log(LIFTOFF_DEBUG,
-			    "Refusing to use composition: all layers "
+				"  Refusing to use composition: all layers "
 			    "have been put in a plane");
 		return false;
 	}
@@ -361,8 +366,8 @@ bool output_choose_layers(struct liftoff_output *output,
 		    check_alloc_valid(result, step)) {
 			/* We found a better allocation */
 			liftoff_log(LIFTOFF_DEBUG,
-				    "Found a better allocation with score=%d",
-				    step->score);
+						"Found a better allocation with score: %d (to beat: %zu)",
+						step->score, result->non_composition_layers_len);
 			result->best_score = step->score;
 			memcpy(result->best, step->alloc,
 			       result->planes_len * sizeof(struct liftoff_layer *));
@@ -421,18 +426,48 @@ bool output_choose_layers(struct liftoff_output *output,
 		}
 
 		if (!device_test_commit(device, result->req, &compatible)) {
+			liftoff_log(LIFTOFF_DEBUG,
+					"  Layer %p -> plane %"PRIu32": "
+					"test commit failed.",
+					(void *)layer, plane->id);
 			return false;
 		}
 		if (compatible) {
 			liftoff_log(LIFTOFF_DEBUG,
 					"  Layer %p -> plane %"PRIu32": success",
 				    (void *)layer, plane->id);
-			/* Continue with the next plane */
+
 			plane_step_init_next(&next_step, step, layer);
-			if (!output_choose_layers(output, result, &next_step)) {
-				return false;
+
+			liftoff_log(LIFTOFF_DEBUG,
+						"CHECK: score: %d target: %zu",
+						step->score, result->non_composition_layers_len);
+			if (step->score >= (int)result->non_composition_layers_len) {
+				/* With this step we found an allocation of all layers. */
+				liftoff_log(LIFTOFF_DEBUG,
+						"  Found an allocation for all layers (score: %d).",
+						step->score);
+				result->best_score = step->score;
+				memcpy(result->best, step->alloc,
+					   result->planes_len * sizeof(struct liftoff_layer *));
+			} else {
+				/* Continue with the next plane */
+				if (!output_choose_layers(output, result, &next_step)) {
+					return false;
+				}
 			}
+		} else {
+			liftoff_log(LIFTOFF_DEBUG,
+					"  Layer %p -> plane %"PRIu32": "
+					"incompatible plane combination.",
+					(void *)layer, plane->id);
 		}
+
+//		if (result->best_score >= (int)result->non_composition_layers_len) {
+//			/* This branch already represents an allocation of all layers. */
+//			drmModeAtomicSetCursor(result->req, cursor);
+//			return true;
+//		}
 
 		drmModeAtomicSetCursor(result->req, cursor);
 	}
@@ -732,6 +767,24 @@ static bool reset_planes(struct liftoff_device *device, drmModeAtomicReq *req)
 	return true;
 }
 
+static void init_result(struct liftoff_output *output,
+						struct alloc_result *result)
+{
+	struct liftoff_layer *layer;
+	size_t count = 0;
+
+	liftoff_list_for_each(layer, &output->layers, link) {
+		if (layer->force_composition || layer_has_fb(layer)) {
+			count++;
+		}
+	}
+	if (output->composition_layer != NULL) {
+		result->has_composition_layer = true;
+		count--;
+	}
+	result->non_composition_layers_len = count;
+}
+
 bool liftoff_output_apply(struct liftoff_output *output, drmModeAtomicReq *req)
 {
 	struct liftoff_device *device;
@@ -787,17 +840,21 @@ bool liftoff_output_apply(struct liftoff_output *output, drmModeAtomicReq *req)
 
 	result.best_score = -1;
 	memset(result.best, 0, result.planes_len * sizeof(*result.best));
-	result.has_composition_layer = output->composition_layer != NULL;
-	result.non_composition_layers_len =
-		liftoff_list_length(&output->layers);
-	if (output->composition_layer != NULL) {
-		result.non_composition_layers_len--;
-	}
+
+	init_result(output, &result);
+//	result.has_composition_layer = output->composition_layer != NULL;
+//	result.non_composition_layers_len =
+//		liftoff_list_length(&output->layers);
+//	if (output->composition_layer != NULL) {
+//		result.non_composition_layers_len--;
+//	}
+
 	step.plane_link = device->planes.next;
 	step.plane_idx = 0;
 	step.score = 0;
 	step.last_layer_zpos = INT_MAX;
 	step.composited = false;
+
 	if (!output_choose_layers(output, &result, &step)) {
 		return false;
 	}

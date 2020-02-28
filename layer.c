@@ -89,6 +89,65 @@ void liftoff_layer_set_property(struct liftoff_layer *layer, const char *name,
 	}
 }
 
+void liftoff_layer_remove_property(struct liftoff_layer *layer,
+								   const char *name)
+{
+	struct liftoff_layer_property *props;
+    size_t i;
+
+	for (i = 0; i < layer->props_len; i++) {
+		if (strcmp(layer->props[i].name, name) == 0) {
+			break;
+		}
+	}
+	if (i == layer->props_len) {
+		return;
+	}
+
+	liftoff_log(LIFTOFF_DEBUG, "XXX liftoff_layer_remove_property %zu aus %zu", i, layer->props_len);
+	if (layer->plane != NULL) {
+		layer->plane->layer = NULL;
+		layer->plane = NULL;
+	}
+	layer->output->layers_changed = true;
+
+	layer->props_len--;
+	if (layer->props_len == 0) {
+		free(layer->props);
+		return;
+	}
+	if (i < layer->props_len) {
+		/* Need to move all props after the removed one to the left. */
+
+		liftoff_log(LIFTOFF_DEBUG, "XXX MEMMOVE1 %s <- %s | rest: %zu",
+					layer->props[i].name, layer->props[i + 1].name, layer->props_len - i);
+
+		memmove(&layer->props[i], &layer->props[i + 1],
+				(layer->props_len - i) * sizeof(struct liftoff_layer_property));
+
+		liftoff_log(LIFTOFF_DEBUG, "XXX MEMMOVE1 %s",
+					layer->props[i].name);
+	}
+
+	props = realloc(layer->props, layer->props_len
+			* sizeof(struct liftoff_layer_property));
+	if (props == NULL) {
+		liftoff_log_errno(LIFTOFF_ERROR, "realloc");
+		return;
+	}
+	layer->props = props;
+
+
+	liftoff_log(LIFTOFF_DEBUG, "XXX liftoff_layer_remove_property, neue len: %zu", layer->props_len);
+
+	for (i = 0; i < layer->props_len; i++) {
+		if (strcmp(layer->props[i].name, name) == 0) {
+			break;
+		}
+		liftoff_log_cnt(LIFTOFF_ERROR, "%s ", layer->props[i].name);
+	}
+}
+
 void liftoff_layer_set_fb_composited(struct liftoff_layer *layer)
 {
 	struct liftoff_layer_property *prop;

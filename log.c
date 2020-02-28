@@ -28,7 +28,7 @@ void liftoff_log_init(enum liftoff_log_importance verbosity,
 
 bool log_has(enum liftoff_log_importance verbosity)
 {
-	return verbosity >= log_importance;
+	return verbosity <= log_importance;
 }
 
 void liftoff_log(enum liftoff_log_importance verbosity, const char *fmt, ...)

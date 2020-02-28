@@ -54,6 +54,10 @@ void liftoff_layer_destroy(struct liftoff_layer *layer);
  */
 void liftoff_layer_set_property(struct liftoff_layer *layer, const char *name,
 				uint64_t value);
+
+
+void liftoff_layer_remove_property(struct liftoff_layer *layer, const char *name);
+
 /**
  * Force composition on this layer. This unsets any previous FB_ID value. To
  * switch back to direct scan-out, set FB_ID again.
